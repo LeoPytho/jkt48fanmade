@@ -6,12 +6,10 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'dist')));
 
 // Database connection
 const pool = new Pool({
@@ -46,7 +44,7 @@ async function initDatabase() {
   }
 }
 
-// Initialize database on startup
+// Initialize database
 initDatabase();
 
 // Generate member number
@@ -61,17 +59,15 @@ function generateBarcode(memberNumber) {
   return `BC${memberNumber}${Date.now().toString().slice(-4)}`;
 }
 
-// Register endpoint
+// API Routes
 app.post('/api/register', async (req, res) => {
   try {
     const { email, username, password, nomor_hp, oshi = '' } = req.body;
 
-    // Validate input
     if (!email || !username || !password || !nomor_hp) {
       return res.status(400).json({ message: 'Semua field wajib diisi' });
     }
 
-    // Check if user already exists
     const existingUser = await pool.query(
       'SELECT * FROM users WHERE email = $1 OR username = $2',
       [email, username]
@@ -81,14 +77,10 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ message: 'Email atau username sudah terdaftar' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Generate member data
     const nomorAnggota = generateMemberNumber();
     const barcode = generateBarcode(nomorAnggota);
 
-    // Insert user
     const result = await pool.query(
       `INSERT INTO users (email, username, password, nomor_hp, nomor_anggota, barcode, oshi) 
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
@@ -109,7 +101,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// Login endpoint
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -118,7 +109,6 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ message: 'Email dan password wajib diisi' });
     }
 
-    // Find user
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     
     if (result.rows.length === 0) {
@@ -126,15 +116,12 @@ app.post('/api/login', async (req, res) => {
     }
 
     const user = result.rows[0];
-
-    // Check password
     const isValidPassword = await bcrypt.compare(password, user.password);
     
     if (!isValidPassword) {
       return res.status(400).json({ message: 'Email atau password salah' });
     }
 
-    // Generate token
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET || 'your-secret-key-change-this-in-production',
@@ -155,7 +142,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Get user profile endpoint
 app.get('/api/profile', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -182,24 +168,9 @@ app.get('/api/profile', async (req, res) => {
   }
 });
 
-// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Serve Vue app for all other routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Terjadi kesalahan server' });
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
+// For Vercel, we need to export the app
 module.exports = app;
