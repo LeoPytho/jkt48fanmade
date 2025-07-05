@@ -2,14 +2,18 @@ const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const QRCode = require('qrcode');
 const cors = require('cors');
 const path = require('path');
 
 const app = express();
+const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Database connection
 const pool = new Pool({
@@ -19,8 +23,11 @@ const pool = new Pool({
   }
 });
 
-// Create tables if they don't exist
-async function initDatabase() {
+// JWT Secret
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+
+// Initialize database tables
+async function initializeDatabase() {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -28,13 +35,13 @@ async function initDatabase() {
         email VARCHAR(255) UNIQUE NOT NULL,
         username VARCHAR(255) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
-        nomor_hp VARCHAR(20) NOT NULL,
-        nomor_anggota VARCHAR(20) UNIQUE NOT NULL,
+        phone VARCHAR(20) NOT NULL,
+        member_number VARCHAR(20) UNIQUE NOT NULL,
         status VARCHAR(50) DEFAULT 'active',
-        jenis VARCHAR(50) DEFAULT 'member',
-        oshi VARCHAR(255) DEFAULT '',
-        barcode VARCHAR(255) DEFAULT '',
-        saldo DECIMAL(10,2) DEFAULT 0.00,
+        type VARCHAR(50) DEFAULT 'regular',
+        oshi VARCHAR(255) DEFAULT 'none',
+        barcode TEXT,
+        balance DECIMAL(10,2) DEFAULT 0.00,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -44,133 +51,261 @@ async function initDatabase() {
   }
 }
 
-// Initialize database
-initDatabase();
-
 // Generate member number
 function generateMemberNumber() {
-  const timestamp = Date.now().toString().slice(-6);
+  const timestamp = Date.now().toString();
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `MBR${timestamp}${random}`;
+  return `MBR${timestamp.slice(-6)}${random}`;
 }
 
-// Generate barcode
-function generateBarcode(memberNumber) {
-  return `BC${memberNumber}${Date.now().toString().slice(-4)}`;
+// Generate QR Code
+async function generateQRCode(data) {
+  try {
+    const qrCode = await QRCode.toDataURL(data);
+    return qrCode;
+  } catch (error) {
+    console.error('Error generating QR code:', error);
+    return null;
+  }
 }
 
-// API Routes
+// Registration endpoint
 app.post('/api/register', async (req, res) => {
   try {
-    const { email, username, password, nomor_hp, oshi = '' } = req.body;
+    const { email, username, password, phone } = req.body;
 
-    if (!email || !username || !password || !nomor_hp) {
-      return res.status(400).json({ message: 'Semua field wajib diisi' });
+    // Validate input
+    if (!email || !username || !password || !phone) {
+      return res.status(400).json({ error: 'All fields are required' });
     }
 
+    // Check if user already exists
     const existingUser = await pool.query(
       'SELECT * FROM users WHERE email = $1 OR username = $2',
       [email, username]
     );
 
     if (existingUser.rows.length > 0) {
-      return res.status(400).json({ message: 'Email atau username sudah terdaftar' });
+      return res.status(400).json({ error: 'User already exists' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const nomorAnggota = generateMemberNumber();
-    const barcode = generateBarcode(nomorAnggota);
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Generate member data
+    const memberNumber = generateMemberNumber();
+    const memberData = {
+      memberNumber,
+      email,
+      username,
+      phone,
+      status: 'active',
+      type: 'regular',
+      oshi: 'none'
+    };
+
+    // Generate QR code
+    const qrCode = await generateQRCode(JSON.stringify(memberData));
+
+    // Insert user into database
     const result = await pool.query(
-      `INSERT INTO users (email, username, password, nomor_hp, nomor_anggota, barcode, oshi) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [email, username, hashedPassword, nomor_hp, nomorAnggota, barcode, oshi]
+      `INSERT INTO users (email, username, password, phone, member_number, status, type, oshi, barcode, balance)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, email, username, phone, member_number, status, type, oshi, balance`,
+      [email, username, hashedPassword, phone, memberNumber, 'active', 'regular', 'none', qrCode, 0.00]
     );
 
     const user = result.rows[0];
-    delete user.password;
+
+    // Generate JWT token
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {
+      expiresIn: '24h'
+    });
 
     res.status(201).json({
-      message: 'Registrasi berhasil',
-      user: user
+      message: 'User registered successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        phone: user.phone,
+        memberNumber: user.member_number,
+        status: user.status,
+        type: user.type,
+        oshi: user.oshi,
+        balance: user.balance,
+        qrCode: qrCode
+      },
+      token
     });
 
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ message: 'Terjadi kesalahan server' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+// Login endpoint
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: 'Email dan password wajib diisi' });
+      return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    
+    // Find user
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+
     if (result.rows.length === 0) {
-      return res.status(400).json({ message: 'Email atau password salah' });
+      return res.status(400).json({ error: 'Invalid credentials' });
     }
 
     const user = result.rows[0];
+
+    // Check password
     const isValidPassword = await bcrypt.compare(password, user.password);
-    
+
     if (!isValidPassword) {
-      return res.status(400).json({ message: 'Email atau password salah' });
+      return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET || 'your-secret-key-change-this-in-production',
-      { expiresIn: '24h' }
-    );
-
-    delete user.password;
+    // Generate JWT token
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {
+      expiresIn: '24h'
+    });
 
     res.json({
-      message: 'Login berhasil',
-      token: token,
-      user: user
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        phone: user.phone,
+        memberNumber: user.member_number,
+        status: user.status,
+        type: user.type,
+        oshi: user.oshi,
+        balance: user.balance,
+        qrCode: user.barcode
+      },
+      token
     });
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Terjadi kesalahan server' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+// Get user profile endpoint
 app.get('/api/profile', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    
+
     if (!token) {
-      return res.status(401).json({ message: 'Token tidak ditemukan' });
+      return res.status(401).json({ error: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-this-in-production');
-    const result = await pool.query('SELECT * FROM users WHERE id = $1', [decoded.userId]);
-    
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const result = await pool.query(
+      'SELECT id, email, username, phone, member_number, status, type, oshi, balance, barcode FROM users WHERE id = $1',
+      [decoded.userId]
+    );
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'User tidak ditemukan' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const user = result.rows[0];
-    delete user.password;
-
-    res.json(user);
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        phone: user.phone,
+        memberNumber: user.member_number,
+        status: user.status,
+        type: user.type,
+        oshi: user.oshi,
+        balance: user.balance,
+        qrCode: user.barcode
+      }
+    });
 
   } catch (error) {
     console.error('Profile error:', error);
-    res.status(401).json({ message: 'Token tidak valid' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+// Update user profile endpoint
+app.put('/api/profile', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { username, phone, oshi } = req.body;
+
+    const result = await pool.query(
+      'UPDATE users SET username = $1, phone = $2, oshi = $3 WHERE id = $4 RETURNING id, email, username, phone, member_number, status, type, oshi, balance, barcode',
+      [username, phone, oshi, decoded.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = result.rows[0];
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        phone: user.phone,
+        memberNumber: user.member_number,
+        status: user.status,
+        type: user.type,
+        oshi: user.oshi,
+        balance: user.balance,
+        qrCode: user.barcode
+      }
+    });
+
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// For Vercel, we need to export the app
+// Test database connection
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.json({ message: 'Database connected successfully', time: result.rows[0].now });
+  } catch (error) {
+    console.error('Database test error:', error);
+    res.status(500).json({ error: 'Database connection failed' });
+  }
+});
+
+// Initialize database when server starts
+initializeDatabase();
+
+// For Vercel, export the app
 module.exports = app;
+
+// For local development
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
