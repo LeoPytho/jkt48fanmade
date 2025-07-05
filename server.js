@@ -4,7 +4,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +46,7 @@ async function initDatabase() {
   }
 }
 
+// Initialize database on startup
 initDatabase();
 
 // Generate member number
@@ -65,6 +65,11 @@ function generateBarcode(memberNumber) {
 app.post('/api/register', async (req, res) => {
   try {
     const { email, username, password, nomor_hp, oshi = '' } = req.body;
+
+    // Validate input
+    if (!email || !username || !password || !nomor_hp) {
+      return res.status(400).json({ message: 'Semua field wajib diisi' });
+    }
 
     // Check if user already exists
     const existingUser = await pool.query(
@@ -109,6 +114,10 @@ app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email dan password wajib diisi' });
+    }
+
     // Find user
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     
@@ -128,7 +137,7 @@ app.post('/api/login', async (req, res) => {
     // Generate token
     const token = jwt.sign(
       { userId: user.id, email: user.email },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET || 'your-secret-key-change-this-in-production',
       { expiresIn: '24h' }
     );
 
@@ -155,7 +164,7 @@ app.get('/api/profile', async (req, res) => {
       return res.status(401).json({ message: 'Token tidak ditemukan' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-this-in-production');
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [decoded.userId]);
     
     if (result.rows.length === 0) {
@@ -173,11 +182,24 @@ app.get('/api/profile', async (req, res) => {
   }
 });
 
-// Serve Vue app
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Serve Vue app for all other routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Terjadi kesalahan server' });
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+module.exports = app;
