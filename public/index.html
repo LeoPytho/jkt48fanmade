@@ -18,6 +18,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            padding: 20px;
         }
 
         .container {
@@ -26,7 +27,7 @@
             border-radius: 10px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             width: 90%;
-            max-width: 500px;
+            max-width: 600px;
         }
 
         .form-container {
@@ -41,6 +42,11 @@
             text-align: center;
             color: #333;
             margin-bottom: 2rem;
+        }
+
+        h2, h3 {
+            color: #333;
+            margin-bottom: 1rem;
         }
 
         .form-group {
@@ -78,10 +84,26 @@
             font-size: 1rem;
             cursor: pointer;
             transition: transform 0.3s;
+            margin-bottom: 0.5rem;
         }
 
         button:hover {
             transform: translateY(-2px);
+        }
+
+        .btn-small {
+            width: auto;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            margin: 0.25rem;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
         }
 
         .toggle-link {
@@ -109,13 +131,36 @@
             text-align: left;
         }
 
-        .qr-code {
+        .api-key-section {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 5px;
             margin: 1rem 0;
+            border: 1px solid #dee2e6;
         }
 
-        .qr-code img {
-            max-width: 150px;
+        .api-key-display {
+            font-family: monospace;
+            font-size: 0.9rem;
+            background: white;
+            padding: 0.5rem;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+            margin: 0.5rem 0;
+            word-break: break-all;
+        }
+
+        .barcode-section {
+            margin: 1rem 0;
+            text-align: center;
+        }
+
+        .barcode-section img {
+            max-width: 100%;
+            height: auto;
             border-radius: 5px;
+            background: white;
+            padding: 10px;
         }
 
         .error {
@@ -157,6 +202,27 @@
             border: 2px solid #ddd;
             border-radius: 5px;
             font-size: 1rem;
+        }
+
+        .flex-row {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .flex-row button {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        @media (max-width: 600px) {
+            .member-info {
+                grid-template-columns: 1fr;
+            }
+            
+            .flex-row {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
@@ -211,6 +277,19 @@
         <!-- Dashboard -->
         <div id="dashboard" class="dashboard">
             <h1>Dashboard Member</h1>
+            
+            <!-- API Key Section -->
+            <div class="api-key-section">
+                <h3>API Key</h3>
+                <p style="color: #666; font-size: 0.9rem;">Gunakan API Key ini untuk mengakses data melalui API</p>
+                <div class="api-key-display" id="apiKeyDisplay"></div>
+                <div class="flex-row">
+                    <button class="btn-small btn-secondary" onclick="copyApiKey()">Copy API Key</button>
+                    <button class="btn-small btn-danger" onclick="regenerateApiKey()">Regenerate</button>
+                </div>
+            </div>
+
+            <!-- Member Card -->
             <div id="memberCard" class="member-card">
                 <h2>Member Card</h2>
                 <div class="member-info">
@@ -221,11 +300,17 @@
                     <div><strong>Username:</strong> <span id="memberUsername"></span></div>
                     <div><strong>Saldo:</strong> Rp <span id="memberBalance"></span></div>
                 </div>
-                <div class="qr-code">
-                    <img id="memberQR" src="" alt="QR Code">
+                
+                <!-- Barcode Section -->
+                <div class="barcode-section">
+                    <h3>Code 128 Barcode</h3>
+                    <img id="memberBarcode" src="" alt="Member Barcode">
+                    <br>
+                    <button class="btn-small btn-secondary" onclick="regenerateBarcode()">Regenerate Barcode</button>
                 </div>
             </div>
 
+            <!-- Profile Form -->
             <div class="profile-form">
                 <h3>Update Profile</h3>
                 <form id="profileForm">
@@ -289,6 +374,70 @@
             document.getElementById('message').innerHTML = '';
         }
 
+        // Copy API Key to clipboard
+        function copyApiKey() {
+            const apiKeyDisplay = document.getElementById('apiKeyDisplay');
+            const textArea = document.createElement('textarea');
+            textArea.value = apiKeyDisplay.textContent;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showMessage('API Key berhasil disalin!', 'success');
+        }
+
+        // Regenerate API Key
+        async function regenerateApiKey() {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/regenerate-apikey`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('apiKeyDisplay').textContent = data.apiKey;
+                    showMessage('API Key berhasil diperbarui!', 'success');
+                } else {
+                    showMessage(data.error || 'Gagal memperbarui API Key');
+                }
+            } catch (error) {
+                showMessage('Terjadi kesalahan. Silakan coba lagi.');
+            }
+        }
+
+        // Regenerate Barcode
+        async function regenerateBarcode() {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/regenerate-barcode`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('memberBarcode').src = data.barcode;
+                    showMessage('Barcode berhasil diperbarui!', 'success');
+                } else {
+                    showMessage(data.error || 'Gagal memperbarui barcode');
+                }
+            } catch (error) {
+                showMessage('Terjadi kesalahan. Silakan coba lagi.');
+            }
+        }
+
         // Login form handler
         document.getElementById('loginFormElement').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -318,8 +467,7 @@
                     showMessage('Login berhasil!', 'success');
                 } else {
                     showMessage(data.error || 'Login gagal');
-                }
-            } catch (error) {
+                } catch (error) {
                 showMessage('Terjadi kesalahan. Silakan coba lagi.');
             }
         });
@@ -442,9 +590,10 @@
             document.getElementById('memberOshi').textContent = currentUser.oshi;
             document.getElementById('memberUsername').textContent = currentUser.username;
             document.getElementById('memberBalance').textContent = currentUser.balance;
+            document.getElementById('apiKeyDisplay').textContent = currentUser.apiKey;
             
-            if (currentUser.qrCode) {
-                document.getElementById('memberQR').src = currentUser.qrCode;
+            if (currentUser.barcode) {
+                document.getElementById('memberBarcode').src = currentUser.barcode;
             }
 
             // Update profile form
