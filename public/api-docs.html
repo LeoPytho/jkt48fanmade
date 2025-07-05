@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation - Membership System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .code-block {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .endpoint {
+            background: #e7f3ff;
+            padding: 15px;
+            border-left: 4px solid #007acc;
+            margin: 20px 0;
+        }
+        .method {
+            font-weight: bold;
+            color: #007acc;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>API Documentation - Membership System</h1>
+    
+    <h2>Authentication</h2>
+    <p>API menggunakan API Key untuk autentikasi. Setiap user memiliki API Key unik dengan format: <strong>JC-XXXX-XXXX-XXXX</strong></p>
+    
+    <div class="warning">
+        <strong>Penting:</strong> Jangan bagikan API Key Anda kepada siapa pun. API Key bersifat rahasia dan memberikan akses penuh ke data akun Anda.
+    </div>
+
+    <h2>Headers Required</h2>
+    <div class="code-block">
+        <strong>x-api-key:</strong> JC-XXXX-XXXX-XXXX
+    </div>
+
+    <h2>Available Endpoints</h2>
+
+    <div class="endpoint">
+        <div class="method">GET /api/user-data</div>
+        <p><strong>Deskripsi:</strong> Mengambil data user berdasarkan API Key</p>
+        <p><strong>Headers:</strong></p>
+        <div class="code-block">
+x-api-key: JC-XXXX-XXXX-XXXX
+        </div>
+        <p><strong>Response:</strong></p>
+        <div class="code-block">
+{
+  "message": "User data retrieved successfully",
+  "data": {
+    "id": 1,
+    "email": "user@example.com",
+    "username": "username",
+    "memberNumber": "MBR123456789",
+    "status": "active",
+    "type": "regular",
+    "oshi": "member1",
+    "balance": "0.00"
+  }
+}
+        </div>
+    </div>
+
+    <h2>Example Usage</h2>
+    
+    <h3>JavaScript (Fetch API)</h3>
+    <div class="code-block">
+fetch('/api/user-data', {
+    method: 'GET',
+    headers: {
+        'x-api-key': 'JC-XXXX-XXXX-XXXX'
+    }
+})
+.then(response => response.json())
+.then(data => console.log(data));
+    </div>
+
+    <h3>cURL</h3>
+    <div class="code-block">
+curl -X GET \
+  http://yoursite.com/api/user-data \
+  -H 'x-api-key: JC-XXXX-XXXX-XXXX'
+    </div>
+
+    <h3>Python (requests)</h3>
+    <div class="code-block">
+import requests
+
+url = "http://yoursite.com/api/user-data"
+headers = {
+    'x-api-key': 'JC-XXXX-XXXX-XXXX'
+}
+
+response = requests.get(url, headers=headers)
+data = response.json()
+print(data)
+    </div>
+
+    <h2>Error Responses</h2>
+    <div class="code-block">
+// Missing API Key
+{
+  "error": "API Key required"
+}
+
+// Invalid API Key
+{
+  "error": "Invalid API Key"
+}
+
+// Server Error
+{
+  "error": "Internal server error"
+}
+    </div>
+
+    <h2>Rate Limiting</h2>
+    <p>Saat ini tidak ada rate limiting yang diterapkan, namun mohon gunakan API dengan bijak.</p>
+
+    <h2>Support</h2>
+    <p>Untuk pertanyaan atau masalah terkait API, silakan hubungi tim support.</p>
+</body>
+</html>
